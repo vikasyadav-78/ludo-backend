@@ -36,7 +36,7 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-// In production mode, fail fast if mandatory OTP provider configurations are missing
+// In production mode, warn if mandatory OTP provider configurations are missing
 if (parsed.data.NODE_ENV === 'production') {
   const missing: string[] = [];
   if (!parsed.data.MSG91_AUTH_KEY) missing.push('MSG91_AUTH_KEY');
@@ -48,8 +48,8 @@ if (parsed.data.NODE_ENV === 'production') {
   if (!parsed.data.SMTP_FROM) missing.push('SMTP_FROM');
 
   if (missing.length > 0) {
-    console.error(`❌ Mandatory production environment variables are missing: ${missing.join(', ')}`);
-    process.exit(1);
+    console.warn(`⚠️  WARNING: Production environment variables for OTP/SMTP are missing: ${missing.join(', ')}`);
+    console.warn('⚠️  SMS and Email OTP delivery will run in SIMULATOR mode.');
   }
 }
 
