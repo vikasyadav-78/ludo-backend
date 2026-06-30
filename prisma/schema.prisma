@@ -1,10 +1,354 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model User {
+  id                 String              @id @default(uuid())
+  name               String
+  email              String              @unique
+  mobile             String              @unique
+  password           String
+  role               Role                @default(USER)
+  status             UserStatus          @default(ACTIVE)
+  avatar             String?             @default("")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  announcements      Announcement[]
+  battlesCreated     Battle[]            @relation("CreatedBy")
+  battlesJoined      Battle[]            @relation("JoinedBy")
+  participants       BattleParticipant[]
+  resultsSubmitted   BattleResult[]      @relation("ResultSubmittedBy")
+  resultsUpdated     BattleResult[]      @relation("ResultUpdatedBy")
+  depositsAudited    DepositRequest[]    @relation("AdminDepositAuditor")
+  deposits           DepositRequest[]    @relation("UserDeposits")
+  loginHistories     LoginHistory[]
+  notifications      Notification[]
+  referralsReceived  Referral?           @relation("Referred")
+  referralsMade      Referral[]          @relation("Referrer")
+  rewardsFor         ReferralReward[]    @relation("RewardReferred")
+  rewardsEarned      ReferralReward[]    @relation("RewardReferrer")
+  messages           SupportMessage[]
+  tickets            SupportTicket[]
+  transactions       Transaction[]
+  devices            UserDevice[]
+  wallet             Wallet?
+  ledgers            WalletLedger[]
+  withdrawalsAudited WithdrawalRequest[] @relation("AdminWithdrawalAuditor")
+  withdrawals        WithdrawalRequest[] @relation("UserWithdrawals")
+
+  @@index([email])
+  @@index([mobile])
+}
+
+model Wallet {
+  id             String         @id @default(uuid())
+  userId         String         @unique
+  depositBalance Float          @default(0)
+  winningBalance Float          @default(0)
+  bonusBalance   Float          @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgers        WalletLedger[]
+
+  @@index([userId])
+}
+
+model Battle {
+  id           String              @id @default(uuid())
+  title        String
+  amount       Float
+  commission   Float
+  winnerAmount Float
+  inviteCode   String?             @unique
+  createdBy    String
+  joinedBy     String?
+  status       Battle_status       @default(OPEN)
+  winnerId     String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  creator      User                @relation("CreatedBy", fields: [createdBy], references: [id])
+  joiner       User?               @relation("JoinedBy", fields: [joinedBy], references: [id])
+  participants BattleParticipant[]
+  results      BattleResult[]
+  revenues     PlatformRevenue[]
+
+  @@index([createdBy])
+  @@index([joinedBy])
+  @@index([status])
+}
+
+model BattleParticipant {
+  id                String          @id @default(uuid())
+  battleId          String
+  userId            String
+  role              ParticipantRole
+  screenshotUrl     String?
+  submittedResult   ResultStatus?
+  resultSubmittedAt DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  battle            Battle          @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id])
+
+  @@unique([battleId, userId])
+  @@index([battleId])
+  @@index([userId])
+}
+
+model BattleResult {
+  id            String         @id @default(uuid())
+  battleId      String
+  submittedBy   String
+  screenshotUrl String?
+  status        ResultStatus
+  adminDecision AdminDecision?
+  updatedBy     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  battle        Battle         @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  submitter     User           @relation("ResultSubmittedBy", fields: [submittedBy], references: [id])
+  auditor       User?          @relation("ResultUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@index([battleId])
+  @@index([submittedBy])
+  @@index([updatedBy], map: "BattleResult_updatedBy_fkey")
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  userId      String
+  walletId    String
+  amount      Float
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  referenceId String?
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id])
+  ledgers     WalletLedger[]
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+}
+
+model WithdrawalRequest {
+  id             String        @id @default(uuid())
+  userId         String
+  amount         Float
+  status         RequestStatus @default(PENDING)
+  paymentMethod  String
+  paymentDetails String
+  rejectedReason String?
+  processedBy    String?
+  processedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  auditor        User?         @relation("AdminWithdrawalAuditor", fields: [processedBy], references: [id])
+  user           User          @relation("UserWithdrawals", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([processedBy], map: "WithdrawalRequest_processedBy_fkey")
+}
+
+model DepositRequest {
+  id             String        @id @default(uuid())
+  userId         String
+  amount         Float
+  transactionId  String        @unique
+  status         RequestStatus @default(PENDING)
+  paymentMethod  String
+  screenshotUrl  String?
+  rejectedReason String?
+  processedBy    String?
+  processedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  auditor        User?         @relation("AdminDepositAuditor", fields: [processedBy], references: [id])
+  user           User          @relation("UserDeposits", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([processedBy], map: "DepositRequest_processedBy_fkey")
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  title      String
+  body       String
+  type       NotificationType
+  readStatus Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readStatus])
+}
+
+model Referral {
+  id           String   @id @default(uuid())
+  referrerId   String
+  referredId   String   @unique
+  referralCode String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  referred     User     @relation("Referred", fields: [referredId], references: [id])
+  referrer     User     @relation("Referrer", fields: [referrerId], references: [id])
+
+  @@index([referrerId])
+  @@index([referredId])
+}
+
+model ReferralReward {
+  id         String       @id @default(uuid())
+  referrerId String
+  referredId String
+  amount     Float
+  status     RewardStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  referred   User         @relation("RewardReferred", fields: [referredId], references: [id])
+  referrer   User         @relation("RewardReferrer", fields: [referrerId], references: [id])
+
+  @@index([referrerId])
+  @@index([referredId])
+}
+
+model SupportTicket {
+  id          String           @id @default(uuid())
+  userId      String
+  title       String
+  description String
+  category    String           @default("OTHER")
+  status      SupportStatus    @default(OPEN)
+  priority    SupportPriority  @default(LOW)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  messages    SupportMessage[]
+  user        User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model SupportMessage {
+  id          String        @id @default(uuid())
+  ticketId    String
+  senderId    String
+  senderRole  Role
+  message     String
+  attachments String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  sender      User          @relation(fields: [senderId], references: [id])
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([senderId])
+}
+
+model AdminSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+}
+
+model PlatformRevenue {
+  id                String   @id @default(uuid())
+  battleId          String
+  commissionEarned  Float
+  totalBattleVolume Float
+  date              DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  battle            Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+
+  @@index([battleId])
+}
+
+model Banner {
+  id        String       @id @default(uuid())
+  imageUrl  String
+  title     String
+  link      String?
+  status    BannerStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Announcement {
+  id        String             @id @default(uuid())
+  message   String
+  status    AnnouncementStatus @default(ACTIVE)
+  createdBy String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  creator   User               @relation(fields: [createdBy], references: [id])
+
+  @@index([createdBy])
+}
+
+model UserDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  deviceToken String
+  platform    Platform
+  lastActive  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceToken])
+  @@index([userId])
+}
+
+model LoginHistory {
+  id            String      @id @default(uuid())
+  userId        String?
+  email         String
+  ipAddress     String
+  userAgent     String
+  status        LoginStatus
+  failureReason String?
+  timestamp     DateTime    @default(now())
+  user          User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+}
+
+model WalletLedger {
+  id              String       @id @default(uuid())
+  walletId        String
+  userId          String
+  transactionId   String?
+  previousBalance Float
+  newBalance      Float
+  balanceType     BalanceType
+  description     String
+  timestamp       DateTime     @default(now())
+  transaction     Transaction? @relation(fields: [transactionId], references: [id])
+  user            User         @relation(fields: [userId], references: [id])
+  wallet          Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([transactionId])
 }
 
 enum Role {
@@ -18,112 +362,6 @@ enum UserStatus {
   SUSPENDED
 }
 
-model User {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  mobile    String     @unique
-  password  String
-  role      Role       @default(USER)
-  status    UserStatus @default(ACTIVE)
-  avatar    String?    @default("")
-  referralCode String? @unique
-  isMobileVerified   Boolean            @default(false)
-  isEmailVerified    Boolean            @default(false)
-  lastLoginAt        DateTime?
-  lastLoginIp        String?
-  lastLoginDevice    String?
-  createdAt DateTime   @default(now())
-
-  updatedAt DateTime   @updatedAt
-
-  wallet             Wallet?
-  battlesCreated     Battle[]            @relation("CreatedBy")
-  battlesJoined      Battle[]            @relation("JoinedBy")
-  participants       BattleParticipant[]
-  resultsSubmitted   BattleResult[]      @relation("ResultSubmittedBy")
-  resultsUpdated     BattleResult[]      @relation("ResultUpdatedBy")
-  transactions       Transaction[]
-  withdrawals        WithdrawalRequest[] @relation("UserWithdrawals")
-  withdrawalsAudited WithdrawalRequest[] @relation("AdminWithdrawalAuditor")
-  deposits           DepositRequest[]    @relation("UserDeposits")
-  depositsAudited    DepositRequest[]    @relation("AdminDepositAuditor")
-  notifications      Notification[]
-  referralsMade      Referral[]          @relation("Referrer")
-  referralsReceived  Referral[]          @relation("Referred")
-  rewardsEarned      ReferralReward[]    @relation("RewardReferrer")
-  rewardsFor         ReferralReward[]    @relation("RewardReferred")
-  tickets            SupportTicket[]
-  messages           SupportMessage[]
-  announcements      Announcement[]
-  devices            UserDevice[]
-  loginHistories     LoginHistory[]
-  ledgers            WalletLedger[]
-
-  @@index([email])
-  @@index([mobile])
-}
-
-model Wallet {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  depositBalance Float    @default(0)
-  winningBalance Float    @default(0)
-  bonusBalance   Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ledgers WalletLedger[]
-
-  @@index([userId])
-}
-
-enum BattleStatus {
-  OPEN
-  JOINED
-  IN_PROGRESS
-  RESULT_SUBMITTED
-  PENDING_APPROVAL
-  COMPLETED
-  SETTLED
-  DISPUTED
-  CANCELLED
-}
-
-model Battle {
-  id           String       @id @default(uuid())
-  title        String
-  amount       Float
-  commission   Float
-  winnerAmount Float
-  inviteCode   String?      @unique
-  createdBy    String
-  joinedBy     String?
-  status       BattleStatus @default(OPEN)
-  winnerId     String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-
-  // AI Verification & Admin Resolution fields
-  aiConfidence          Int?
-  aiResponse            Json?
-  verificationStatus    String?             @default("PENDING")
-  verificationTimestamp DateTime?
-  adminNotes            String?             @db.Text
-  settlementTimestamp   DateTime?
-
-  creator      User                @relation("CreatedBy", fields: [createdBy], references: [id])
-  joiner       User?               @relation("JoinedBy", fields: [joinedBy], references: [id])
-  participants BattleParticipant[]
-  results      BattleResult[]
-  revenues     PlatformRevenue[]
-
-  @@index([createdBy])
-  @@index([joinedBy])
-  @@index([status])
-}
-
 enum ParticipantRole {
   CREATOR
   JOINER
@@ -135,50 +373,10 @@ enum ResultStatus {
   CANCEL
 }
 
-model BattleParticipant {
-  id                String           @id @default(uuid())
-  battleId          String
-  userId            String
-  role              ParticipantRole
-  screenshotUrl     String?
-  screenshotPublicId String?
-  submittedResult   ResultStatus?
-  resultSubmittedAt DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-
-  battle Battle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
-
-  @@unique([battleId, userId])
-  @@index([battleId])
-  @@index([userId])
-}
-
 enum AdminDecision {
   APPROVED
   REJECTED
   DISPUTED_RESOLVED
-}
-
-model BattleResult {
-  id            String         @id @default(uuid())
-  battleId      String
-  submittedBy   String
-  screenshotUrl String?
-  screenshotPublicId String?
-  status        ResultStatus
-  adminDecision AdminDecision?
-  updatedBy     String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  battle    Battle  @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  submitter User    @relation("ResultSubmittedBy", fields: [submittedBy], references: [id])
-  auditor   User?   @relation("ResultUpdatedBy", fields: [updatedBy], references: [id])
-
-  @@index([battleId])
-  @@index([submittedBy])
 }
 
 enum TransactionType {
@@ -198,77 +396,11 @@ enum TransactionStatus {
   FAILED
 }
 
-model Transaction {
-  id                String            @id @default(uuid())
-  userId            String
-  walletId          String
-  amount            Float
-  type              TransactionType
-  status            TransactionStatus @default(PENDING)
-  referenceId       String?
-  description       String?
-  razorpayOrderId   String?
-  razorpayPaymentId String?
-  razorpaySignature String?
-  gatewayResponse   String?           @db.Text
-  paymentMethod     String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-
-  user    User           @relation(fields: [userId], references: [id])
-  ledgers WalletLedger[]
-
-  @@index([userId])
-  @@index([type])
-  @@index([status])
-}
-
 enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
   CANCELLED
-}
-
-model WithdrawalRequest {
-  id             String        @id @default(uuid())
-  userId         String
-  amount         Float
-  status         RequestStatus @default(PENDING)
-  paymentMethod  String
-  paymentDetails String
-  rejectedReason String?
-  processedBy    String?
-  processedAt    DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  user    User  @relation("UserWithdrawals", fields: [userId], references: [id])
-  auditor User? @relation("AdminWithdrawalAuditor", fields: [processedBy], references: [id])
-
-  @@index([userId])
-  @@index([status])
-}
-
-model DepositRequest {
-  id             String        @id @default(uuid())
-  userId         String
-  amount         Float
-  transactionId  String        @unique
-  status         RequestStatus @default(PENDING)
-  paymentMethod  String
-  screenshotUrl  String?
-  rejectedReason String?
-  processedBy    String?
-  processedAt    DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  user    User  @relation("UserDeposits", fields: [userId], references: [id])
-  auditor User? @relation("AdminDepositAuditor", fields: [processedBy], references: [id])
-
-  @@index([userId])
-  @@index([status])
 }
 
 enum NotificationType {
@@ -277,56 +409,9 @@ enum NotificationType {
   SYSTEM
 }
 
-model Notification {
-  id         String           @id @default(uuid())
-  userId     String
-  title      String
-  body       String
-  type       NotificationType
-  readStatus Boolean          @default(false)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([readStatus])
-}
-
-model Referral {
-  id           String   @id @default(uuid())
-  referrerId   String
-  referredId   String   @unique
-  referralCode String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  referrer User @relation("Referrer", fields: [referrerId], references: [id])
-  referred User @relation("Referred", fields: [referredId], references: [id])
-
-  @@index([referrerId])
-  @@index([referredId])
-}
-
 enum RewardStatus {
   PENDING
   CLAIMED
-}
-
-model ReferralReward {
-  id         String       @id @default(uuid())
-  referrerId String
-  referredId String
-  amount     Float
-  status     RewardStatus @default(PENDING)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-
-  referrer User @relation("RewardReferrer", fields: [referrerId], references: [id])
-  referred User @relation("RewardReferred", fields: [referredId], references: [id])
-
-  @@index([referrerId])
-  @@index([referredId])
 }
 
 enum SupportStatus {
@@ -341,102 +426,14 @@ enum SupportPriority {
   HIGH
 }
 
-model SupportTicket {
-  id          String          @id @default(uuid())
-  userId      String
-  title       String
-  description String
-  category    String          @default("OTHER")
-  status      SupportStatus   @default(OPEN)
-  priority    SupportPriority @default(LOW)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  user     User             @relation(fields: [userId], references: [id])
-  messages SupportMessage[]
-
-  @@index([userId])
-  @@index([status])
-}
-
-model SupportMessage {
-  id          String   @id @default(uuid())
-  ticketId    String
-  senderId    String
-  senderRole  Role
-  message     String
-  attachments String? // Stored as comma-separated values
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  sender User          @relation(fields: [senderId], references: [id])
-
-  @@index([ticketId])
-  @@index([senderId])
-}
-
-model AdminSetting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       String
-  category    String   @default("GENERAL")
-  type        String   @default("TEXT")
-  label       String?
-  description String?
-  isPublic    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([key])
-  @@index([category])
-}
-
-model PlatformRevenue {
-  id                String   @id @default(uuid())
-  battleId          String
-  commissionEarned  Float
-  totalBattleVolume Float
-  date              DateTime @default(now())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  battle Battle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-
-  @@index([battleId])
-}
-
 enum BannerStatus {
   ACTIVE
   INACTIVE
 }
 
-model Banner {
-  id        String       @id @default(uuid())
-  imageUrl  String
-  title     String
-  link      String?
-  status    BannerStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-}
-
 enum AnnouncementStatus {
   ACTIVE
   EXPIRED
-}
-
-model Announcement {
-  id        String             @id @default(uuid())
-  message   String
-  status    AnnouncementStatus @default(ACTIVE)
-  createdBy String
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-
-  creator User @relation(fields: [createdBy], references: [id])
-
-  @@index([createdBy])
 }
 
 enum Platform {
@@ -445,40 +442,9 @@ enum Platform {
   WEB
 }
 
-model UserDevice {
-  id          String   @id @default(uuid())
-  userId      String
-  deviceToken String
-  platform    Platform
-  lastActive  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, deviceToken])
-  @@index([userId])
-}
-
 enum LoginStatus {
   SUCCESS
   FAILED
-}
-
-model LoginHistory {
-  id            String      @id @default(uuid())
-  userId        String?
-  email         String
-  ipAddress     String
-  userAgent     String
-  status        LoginStatus
-  failureReason String?
-  timestamp     DateTime    @default(now())
-
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([email])
 }
 
 enum BalanceType {
@@ -487,45 +453,13 @@ enum BalanceType {
   BONUS
 }
 
-model WalletLedger {
-  id              String      @id @default(uuid())
-  walletId        String
-  userId          String
-  transactionId   String?
-  previousBalance Float
-  newBalance      Float
-  balanceType     BalanceType
-  description     String
-  timestamp       DateTime    @default(now())
-
-  wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  user        User         @relation(fields: [userId], references: [id])
-  transaction Transaction? @relation(fields: [transactionId], references: [id])
-
-  @@index([walletId])
-  @@index([userId])
-  @@index([transactionId])
-}
-
-model AdminAuditLog {
-  id        String   @id @default(uuid())
-  adminId   String
-  adminName String
-  action    String   @db.Text
-  ip        String?
-  device    String?
-  createdAt DateTime @default(now())
-
-  @@index([adminId])
-  @@index([createdAt])
-}
-
-model OtpVerification {
-  id         String   @id @default(uuid())
-  identifier String   @unique
-  otpHash    String
-  expiry     DateTime
-  attempts   Int      @default(0)
-  lastSentAt DateTime @default(now())
-  createdAt  DateTime @default(now())
+enum Battle_status {
+  OPEN
+  JOINED
+  IN_PROGRESS
+  RESULT_SUBMITTED
+  PENDING_APPROVAL
+  COMPLETED
+  DISPUTED
+  CANCELLED
 }
