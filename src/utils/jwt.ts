@@ -7,7 +7,8 @@ interface TokenPayload {
 }
 
 export const signAccessToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '15m' });
+  const isStaff = payload.role === 'ADMIN' || payload.role === 'SUPPORT';
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: isStaff ? '3d' : '15m' });
 };
 
 export const signRefreshToken = (payload: TokenPayload): string => {
