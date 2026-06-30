@@ -17,9 +17,20 @@ export const getProfile = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
 export const updateProfile = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const userId = req.user!.id;
-  const { name } = req.body;
+  const { name, email } = req.body;
 
-  const updatedUser = await userRepository.update(userId, { name });
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = name;
+
+  if (email !== undefined && email !== req.user!.email) {
+    const existing = await userRepository.findByEmail(email);
+    if (existing) {
+      throw new AppError('Email already registered by another user', 400);
+    }
+    updateData.email = email;
+  }
+
+  const updatedUser = await userRepository.update(userId, updateData);
 
   res.status(200).json({
     status: 'success',
