@@ -16,6 +16,12 @@ model User {
   role               Role                @default(USER)
   status             UserStatus          @default(ACTIVE)
   avatar             String?             @default("")
+  referralCode       String              @unique
+  isMobileVerified   Boolean             @default(false)
+  isEmailVerified    Boolean             @default(false)
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  lastLoginDevice    String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   announcements      Announcement[]
@@ -45,6 +51,17 @@ model User {
   @@index([mobile])
 }
 
+model OtpVerification {
+  id          String   @id @default(uuid())
+  identifier  String   @unique
+  otpHash     String
+  expiry      DateTime
+  attempts    Int      @default(0)
+  lastSentAt  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Wallet {
   id             String         @id @default(uuid())
   userId         String         @unique
@@ -68,11 +85,17 @@ model Battle {
   inviteCode   String?             @unique
   createdBy    String
   joinedBy     String?
-  status       Battle_status       @default(OPEN)
-  winnerId     String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  creator      User                @relation("CreatedBy", fields: [createdBy], references: [id])
+  status       BattleStatus       @default(OPEN)
+  winnerId            String?
+  aiConfidence        Float?
+  aiResponse          Json?
+  verificationStatus  BattleVerificationStatus?
+  verificationTimestamp DateTime?
+  settlementTimestamp DateTime?
+  adminNotes          String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  creator             User                @relation("CreatedBy", fields: [createdBy], references: [id])
   joiner       User?               @relation("JoinedBy", fields: [joinedBy], references: [id])
   participants BattleParticipant[]
   results      BattleResult[]
@@ -89,6 +112,7 @@ model BattleParticipant {
   userId            String
   role              ParticipantRole
   screenshotUrl     String?
+  screenshotPublicId String?
   submittedResult   ResultStatus?
   resultSubmittedAt DateTime?
   createdAt         DateTime        @default(now())
@@ -106,6 +130,7 @@ model BattleResult {
   battleId      String
   submittedBy   String
   screenshotUrl String?
+  screenshotPublicId String?
   status        ResultStatus
   adminDecision AdminDecision?
   updatedBy     String?
@@ -127,9 +152,14 @@ model Transaction {
   amount      Float
   type        TransactionType
   status      TransactionStatus @default(PENDING)
-  referenceId String?
-  description String?
-  createdAt   DateTime          @default(now())
+  referenceId      String?
+  description      String?
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  gatewayResponse  String?
+  paymentMethod    String?
+  createdAt        DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   user        User              @relation(fields: [userId], references: [id])
   ledgers     WalletLedger[]
@@ -257,11 +287,26 @@ model SupportMessage {
   @@index([senderId])
 }
 
+model AdminAuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  adminName String
+  action    String
+  ip        String
+  device    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model AdminSetting {
   id          String   @id @default(uuid())
   key         String   @unique
   value       String
+  category    String   @default("GENERAL")
+  type        String   @default("TEXT")
+  label       String   @default("")
   description String?
+  isPublic    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -379,6 +424,15 @@ enum AdminDecision {
   DISPUTED_RESOLVED
 }
 
+enum BattleVerificationStatus {
+  FAILED
+  AUTO_SETTLED
+  DISPUTED
+  MANUAL_SETTLED
+  REFUNDED
+  REJECTED
+}
+
 enum TransactionType {
   DEPOSIT
   WITHDRAW
@@ -453,13 +507,14 @@ enum BalanceType {
   BONUS
 }
 
-enum Battle_status {
+enum BattleStatus {
   OPEN
   JOINED
   IN_PROGRESS
   RESULT_SUBMITTED
   PENDING_APPROVAL
   COMPLETED
+  SETTLED
   DISPUTED
   CANCELLED
 }
