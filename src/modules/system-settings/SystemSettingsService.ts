@@ -3,6 +3,7 @@ import { systemSettingsRepository } from './SystemSettingsRepository';
 import { systemSettingsCache } from './SystemSettingsCache';
 import { systemSettingsValidator } from './SystemSettingsValidator';
 import { emitSettingsUpdate } from '../../socket/socket';
+import bcrypt from 'bcryptjs';
 
 const DEFAULT_CATALOG = [
   // General Settings
@@ -77,6 +78,40 @@ export class SystemSettingsService {
 
     // Initialize/Refresh Cache
     await systemSettingsCache.initialize();
+
+    // Auto-seed default admin account if none exists
+    const adminCount = await prisma.user.count({
+      where: { role: 'ADMIN' }
+    });
+
+    if (adminCount === 0) {
+      const hashedPassword = await bcrypt.hash('LudoAdmin@7878@', 12);
+      
+      const adminUser = await prisma.user.create({
+        data: {
+          name: 'Super Admin',
+          email: 'yadavvikas787840@gmail.com',
+          mobile: '7878402570',
+          password: hashedPassword,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          isMobileVerified: true,
+          isEmailVerified: true,
+          referralCode: 'ADMIN100'
+        }
+      });
+
+      // Initialize wallet for admin
+      await prisma.wallet.create({
+        data: {
+          userId: adminUser.id,
+          depositBalance: 0,
+          winningBalance: 0,
+          bonusBalance: 0
+        }
+      });
+      console.log('👑 Default Admin account seeded successfully!');
+    }
   }
 
   async getAdminSettings() {
