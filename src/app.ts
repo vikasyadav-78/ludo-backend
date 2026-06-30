@@ -11,6 +11,9 @@ import path from 'path';
 
 const app: Express = express();
 
+// Trust proxy for rate limiters when deployed behind a proxy (like Railway)
+app.set('trust proxy', 1);
+
 // Security HTTP headers - allow cross-origin resource sharing for local images
 app.use(helmet({ crossOriginResourcePolicy: false }));
 
