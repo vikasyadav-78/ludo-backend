@@ -4,8 +4,6 @@
   "description": "Production-ready gaming battle platform backend with Prisma and MySQL",
   "main": "dist/server.js",
   "scripts": {
-    // "build": "tsc",
-    // "start": "node dist/server.js",
     "build": "npx prisma generate && tsc",
     "start": "npx prisma migrate deploy && node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
