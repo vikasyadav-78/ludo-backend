@@ -21,7 +21,7 @@ export class SmsService {
       return;
     }
 
-    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
 
     if (provider === 'twilio') {
       await this.sendTwilioSms(mobile, otp);

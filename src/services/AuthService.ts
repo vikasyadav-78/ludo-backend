@@ -74,7 +74,7 @@ export class AuthService {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = await bcrypt.hash(otp, 10);
 
-    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
     const otpIdentifier = provider === 'email' ? email : mobile;
 
     const existingOtp = await prisma.otpVerification.findUnique({
@@ -154,7 +154,7 @@ export class AuthService {
       throw new AppError('Mobile number already registered', 400);
     }
 
-    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
     const otpIdentifier = provider === 'email' ? email : mobile;
 
     const record = await prisma.otpVerification.findUnique({
@@ -484,7 +484,7 @@ export class AuthService {
       throw new AppError('No user found with that email or mobile number', 404);
     }
 
-    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
     const targetIdentifier = provider === 'email' ? user.email : (isEmailInput ? user.email : user.mobile);
     const isSendingToEmail = provider === 'email' || isEmailInput;
 
@@ -561,7 +561,7 @@ export class AuthService {
       throw new AppError('No user found with that email or mobile number', 404);
     }
 
-    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
     const targetIdentifier = provider === 'email' ? user.email : (isEmailInput ? user.email : user.mobile);
 
     const record = await prisma.otpVerification.findUnique({

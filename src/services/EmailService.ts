@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../config/logger';
 import { systemSettingsCache } from '../modules/system-settings/SystemSettingsCache';
+import AppError from '../utils/AppError';
 
 class EmailService {
   private transporter;
@@ -19,6 +20,9 @@ class EmailService {
       auth: {
         user,
         pass,
+      },
+      tls: {
+        rejectUnauthorized: false, // Prevents certificate validation failures on platforms like Railway
       },
     });
   }
@@ -63,8 +67,8 @@ class EmailService {
         await this.transporter.sendMail(mailOptions);
         logger.info(`OTP email sent successfully to: ${email}`);
       } catch (error: any) {
-        logger.error(`Failed to send OTP email to ${email}: ${error.message}`);
-        console.log(`\n📧 [EMAIL FALLBACK SIMULATOR] OTP for ${email}: ${otp}\n`);
+        logger.error(`SMTP email send failed for ${email}: ${error.message}`, { stack: error.stack });
+        throw new AppError(`Failed to deliver OTP email: ${error.message}`, 500);
       }
     } else {
       logger.info(`SMTP credentials not configured. Simulated OTP email for ${email}`);
