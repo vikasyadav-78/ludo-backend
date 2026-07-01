@@ -49,6 +49,7 @@ const DEFAULT_CATALOG = [
   { key: 'SMS_NOTIFICATIONS_ENABLED', value: 'true', category: 'NOTIFICATIONS', type: 'BOOLEAN', label: 'SMS Notifications Enabled', description: 'Allow MSG91 SMS delivery', isPublic: true },
 
   // Security Settings
+  { key: 'OTP_PROVIDER', value: 'email', category: 'SECURITY', type: 'TEXT', label: 'OTP Provider', description: 'Active SMS/Email OTP Provider (msg91, twilio, email)', isPublic: true },
   { key: 'OTP_EXPIRY_MINS', value: '5', category: 'SECURITY', type: 'NUMBER', label: 'OTP Expiry (mins)', description: 'Lifespan of validation OTP tokens', isPublic: false },
   { key: 'OTP_RETRY_LIMIT', value: '5', category: 'SECURITY', type: 'NUMBER', label: 'OTP Retry Limit', description: 'Max OTP sends allowed in a cooldown period', isPublic: false },
   { key: 'LOGIN_RETRY_LIMIT', value: '5', category: 'SECURITY', type: 'NUMBER', label: 'Login Retry Limit', description: 'Max failed login attempts before lockout', isPublic: false },
