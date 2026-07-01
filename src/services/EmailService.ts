@@ -12,19 +12,43 @@ class EmailService {
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
 
-    // Create SMTP transporter
+    // Create SMTP transporter forcing IPv4 (family: 4) to avoid ENETUNREACH errors on Railway
     this.transporter = nodemailer.createTransport({
       host,
       port,
-      secure: port === 465, // true for 465, false for other ports
+      secure: false, // port 587 uses STARTTLS (secure: false)
+      requireTLS: true,
       auth: {
         user,
         pass,
       },
+      family: 4, // Force IPv4 resolution
       tls: {
-        rejectUnauthorized: false, // Prevents certificate validation failures on platforms like Railway
+        rejectUnauthorized: false,
       },
-    });
+    } as any);
+
+    // Run connection verification immediately
+    this.verifyConnection();
+  }
+
+  async verifyConnection(): Promise<boolean> {
+    if (!process.env.SMTP_USER || process.env.SMTP_USER.includes('your_email')) {
+      logger.info('SMTP credentials not configured. Skipping transporter verification.');
+      return false;
+    }
+    try {
+      await this.transporter.verify();
+      logger.info('📧 SMTP Transporter verified successfully!');
+      return true;
+    } catch (error: any) {
+      logger.error('❌ SMTP Transporter verification failed: ' + error.message, {
+        code: error.code,
+        command: error.command,
+        stack: error.stack,
+      });
+      return false;
+    }
   }
 
   async sendOtp(email: string, otp: string): Promise<void> {
@@ -63,12 +87,23 @@ class EmailService {
     }
 
     if (process.env.SMTP_USER && process.env.SMTP_PASS && !process.env.SMTP_USER.includes('your_email')) {
-      try {
+      const makeRequest = async () => {
         await this.transporter.sendMail(mailOptions);
+      };
+
+      try {
+        await makeRequest();
         logger.info(`OTP email sent successfully to: ${email}`);
       } catch (error: any) {
-        logger.error(`SMTP email send failed for ${email}: ${error.message}`, { stack: error.stack });
-        throw new AppError(`Failed to deliver OTP email: ${error.message}`, 500);
+        logger.warn(`First attempt to send OTP email to ${email} failed: ${error.message}. Retrying once...`);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait 1.5 seconds
+          await makeRequest();
+          logger.info(`OTP email sent successfully to ${email} on retry.`);
+        } catch (retryError: any) {
+          logger.error(`SMTP email send failed for ${email} after retry: ${retryError.message}`, { stack: retryError.stack });
+          throw new AppError(`Failed to deliver OTP email: ${retryError.message}`, 500);
+        }
       }
     } else {
       logger.info(`SMTP credentials not configured. Simulated OTP email for ${email}`);
