@@ -21,11 +21,91 @@ export class SmsService {
       return;
     }
 
+    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+
+    if (provider === 'twilio') {
+      await this.sendTwilioSms(mobile, otp);
+    } else {
+      await this.sendMsg91Sms(mobile, otp);
+    }
+  }
+
+  private async sendTwilioSms(mobile: string, otp: string): Promise<void> {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID || '';
+    const authToken = process.env.TWILIO_AUTH_TOKEN || '';
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER || '';
+
+    // Standard local developer fallback logging
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`\n📲 [TWILIO SMS SIMULATOR] Generated Mobile OTP for ${mobile}: ${otp}\n`);
+    }
+
+    if (!accountSid || !authToken || !fromNumber || accountSid.includes('your_twilio_')) {
+      logger.info(`Twilio credentials not fully configured. Simulated SMS for ${mobile}`);
+      return;
+    }
+
+    // Format mobile: ensure international plus prefix is present (defaulting to +91 for 10-digit Indian numbers)
+    let formattedMobile = mobile.trim();
+    if (!formattedMobile.startsWith('+')) {
+      if (formattedMobile.length === 10) {
+        formattedMobile = `+91${formattedMobile}`;
+      } else {
+        formattedMobile = `+${formattedMobile}`;
+      }
+    }
+
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+    const params = new URLSearchParams();
+    params.append('To', formattedMobile);
+    params.append('From', fromNumber);
+    params.append('Body', `Your Ludo Battle verification code is ${otp}. It is valid for 5 minutes.`);
+
+    const makeRequest = async () => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Twilio API HTTP error! Status: ${response.status}. Details: ${errorText}`);
+      }
+
+      const resData = (await response.json()) as any;
+      if (resData.error_code) {
+        throw new Error(`Twilio API error [Code ${resData.error_code}]: ${resData.error_message}`);
+      }
+    };
+
+    try {
+      await makeRequest();
+      logger.info(`Twilio SMS sent successfully to: ${mobile}`);
+    } catch (error: any) {
+      logger.warn(`First attempt to send Twilio SMS to ${mobile} failed: ${error.message}. Retrying once...`);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await makeRequest();
+        logger.info(`Twilio SMS sent successfully to ${mobile} on retry.`);
+      } catch (retryError: any) {
+        logger.error(`Failed to send Twilio SMS to ${mobile} after retry: ${retryError.message}`);
+        console.log(`\n📲 [TWILIO FALLBACK SIMULATOR] OTP for ${mobile}: ${otp}\n`);
+      }
+    }
+  }
+
+  private async sendMsg91Sms(mobile: string, otp: string): Promise<void> {
     // Prefix country code 91 if it's a 10-digit Indian number without country code
     const formattedMobile = mobile.length === 10 ? `91${mobile}` : mobile;
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`\n📲 [SMS SIMULATOR] Generated Mobile OTP for ${mobile}: ${otp}\n`);
+      console.log(`\n📲 [MSG91 SMS SIMULATOR] Generated Mobile OTP for ${mobile}: ${otp}\n`);
     }
 
     if (!this.authKey || !this.templateId || !this.senderId || this.authKey.includes('your_msg91_')) {
