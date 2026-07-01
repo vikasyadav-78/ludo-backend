@@ -36,12 +36,12 @@ class EmailService {
     const mailOptions = {
       from,
       to: email,
-      subject: 'Password Reset OTP Verification Code',
+      subject: 'Ludo Arena OTP Verification Code',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <h2 style="color: #4f46e5; text-align: center;">Ludo Arena Password Recovery</h2>
+          <h2 style="color: #4f46e5; text-align: center;">Ludo Arena Verification</h2>
           <p>Hello,</p>
-          <p>We received a request to reset your password. Use the following 6-digit OTP verification code to proceed:</p>
+          <p>Use the following 6-digit OTP verification code to proceed with your request:</p>
           <div style="text-align: center; margin: 30px 0;">
             <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #1e1b4b; background-color: #f3f4f6; padding: 10px 25px; border-radius: 5px; border: 1px dashed #4f46e5; display: inline-block;">
               ${otp}

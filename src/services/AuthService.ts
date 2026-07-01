@@ -74,8 +74,11 @@ export class AuthService {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = await bcrypt.hash(otp, 10);
 
+    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const otpIdentifier = provider === 'email' ? email : mobile;
+
     const existingOtp = await prisma.otpVerification.findUnique({
-      where: { identifier: mobile }
+      where: { identifier: otpIdentifier }
     });
 
     if (existingOtp) {
@@ -97,7 +100,7 @@ export class AuthService {
       }
 
       await prisma.otpVerification.update({
-        where: { identifier: mobile },
+        where: { identifier: otpIdentifier },
         data: {
           otpHash,
           expiry: new Date(Date.now() + systemSettingsCache.getNumber('OTP_EXPIRY_MINS', 5) * 60000), // dynamic minutes expiry
@@ -108,7 +111,7 @@ export class AuthService {
     } else {
       await prisma.otpVerification.create({
         data: {
-          identifier: mobile,
+          identifier: otpIdentifier,
           otpHash,
           expiry: new Date(Date.now() + systemSettingsCache.getNumber('OTP_EXPIRY_MINS', 5) * 60000),
           attempts: 1,
@@ -117,11 +120,13 @@ export class AuthService {
       });
     }
 
-    await otpService.sendOtp(mobile, otp);
+    await otpService.sendOtp(otpIdentifier, otp);
 
     const response: any = {
       status: 'success',
-      message: 'OTP sent successfully to your mobile number.',
+      message: provider === 'email'
+        ? 'OTP sent successfully to your email address.'
+        : 'OTP sent successfully to your mobile number.',
     };
     if (process.env.NODE_ENV === 'development') {
       response.otp = otp;
@@ -149,12 +154,15 @@ export class AuthService {
       throw new AppError('Mobile number already registered', 400);
     }
 
+    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const otpIdentifier = provider === 'email' ? email : mobile;
+
     const record = await prisma.otpVerification.findUnique({
-      where: { identifier: mobile }
+      where: { identifier: otpIdentifier }
     });
 
     if (!record) {
-      throw new AppError('No OTP request found for this mobile number', 400);
+      throw new AppError(provider === 'email' ? 'No OTP request found for this email address' : 'No OTP request found for this mobile number', 400);
     }
 
     // Expiry check (5 mins)
@@ -167,11 +175,11 @@ export class AuthService {
     if (!isMatch) {
       const newAttempts = record.attempts + 1;
       if (newAttempts >= 5) {
-        await prisma.otpVerification.delete({ where: { identifier: mobile } });
+        await prisma.otpVerification.delete({ where: { identifier: otpIdentifier } });
         throw new AppError('Maximum invalid OTP attempts exceeded. Please request a new OTP.', 400);
       } else {
         await prisma.otpVerification.update({
-          where: { identifier: mobile },
+          where: { identifier: otpIdentifier },
           data: { attempts: newAttempts }
         });
         throw new AppError('Invalid OTP', 400);
@@ -179,7 +187,7 @@ export class AuthService {
     }
 
     // Delete OTP record immediately
-    await prisma.otpVerification.delete({ where: { identifier: mobile } });
+    await prisma.otpVerification.delete({ where: { identifier: otpIdentifier } });
 
     // Hashed Password
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -470,17 +478,21 @@ export class AuthService {
   }
 
   async sendForgotPasswordOtp(identifier: string): Promise<any> {
-    const isEmail = identifier.includes('@');
-    const user = isEmail ? await userRepository.findByEmail(identifier) : await userRepository.findByMobile(identifier);
+    const isEmailInput = identifier.includes('@');
+    const user = isEmailInput ? await userRepository.findByEmail(identifier) : await userRepository.findByMobile(identifier);
     if (!user) {
       throw new AppError('No user found with that email or mobile number', 404);
     }
+
+    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const targetIdentifier = provider === 'email' ? user.email : (isEmailInput ? user.email : user.mobile);
+    const isSendingToEmail = provider === 'email' || isEmailInput;
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = await bcrypt.hash(otp, 10);
 
     const existingOtp = await prisma.otpVerification.findUnique({
-      where: { identifier }
+      where: { identifier: targetIdentifier }
     });
 
     if (existingOtp) {
@@ -500,7 +512,7 @@ export class AuthService {
       }
 
       await prisma.otpVerification.update({
-        where: { identifier },
+        where: { identifier: targetIdentifier },
         data: {
           otpHash,
           expiry: new Date(Date.now() + systemSettingsCache.getNumber('OTP_EXPIRY_MINS', 5) * 60000),
@@ -511,7 +523,7 @@ export class AuthService {
     } else {
       await prisma.otpVerification.create({
         data: {
-          identifier,
+          identifier: targetIdentifier,
           otpHash,
           expiry: new Date(Date.now() + systemSettingsCache.getNumber('OTP_EXPIRY_MINS', 5) * 60000),
           attempts: 1,
@@ -520,11 +532,12 @@ export class AuthService {
       });
     }
 
-    await otpService.sendOtp(identifier, otp);
+    await otpService.sendOtp(targetIdentifier, otp);
 
     const response: any = {
       status: 'success',
-      message: isEmail 
+      target: targetIdentifier,
+      message: isSendingToEmail 
         ? 'OTP sent successfully to your email address.' 
         : 'OTP sent successfully to your mobile number.',
     };
@@ -542,18 +555,21 @@ export class AuthService {
       throw new AppError('Identifier (email or mobile) is required', 400);
     }
 
-    const isEmail = identifier.includes('@');
-    const user = isEmail ? await userRepository.findByEmail(identifier) : await userRepository.findByMobile(identifier);
+    const isEmailInput = identifier.includes('@');
+    const user = isEmailInput ? await userRepository.findByEmail(identifier) : await userRepository.findByMobile(identifier);
     if (!user) {
       throw new AppError('No user found with that email or mobile number', 404);
     }
 
+    const provider = (process.env.OTP_PROVIDER || 'twilio').toLowerCase();
+    const targetIdentifier = provider === 'email' ? user.email : (isEmailInput ? user.email : user.mobile);
+
     const record = await prisma.otpVerification.findUnique({
-      where: { identifier }
+      where: { identifier: targetIdentifier }
     });
 
     if (!record) {
-      throw new AppError('No OTP request found for this email or mobile number', 400);
+      throw new AppError(provider === 'email' ? 'No OTP request found for this email address' : 'No OTP request found for this email or mobile number', 400);
     }
 
     if (new Date() > new Date(record.expiry)) {
@@ -564,11 +580,11 @@ export class AuthService {
     if (!isMatch) {
       const newAttempts = record.attempts + 1;
       if (newAttempts >= systemSettingsCache.getNumber('OTP_RETRY_LIMIT', 5)) {
-        await prisma.otpVerification.delete({ where: { identifier } });
+        await prisma.otpVerification.delete({ where: { identifier: targetIdentifier } });
         throw new AppError('Maximum invalid OTP attempts exceeded. Please request a new OTP.', 400);
       } else {
         await prisma.otpVerification.update({
-          where: { identifier },
+          where: { identifier: targetIdentifier },
           data: { attempts: newAttempts }
         });
         throw new AppError('Invalid OTP', 400);
@@ -576,11 +592,11 @@ export class AuthService {
     }
 
     this.validatePasswordPolicy(password);
-    await prisma.otpVerification.delete({ where: { identifier } });
+    await prisma.otpVerification.delete({ where: { identifier: targetIdentifier } });
 
     const hashedPassword = await bcrypt.hash(password, 12);
     await userRepository.update(user.id, { password: hashedPassword });
-    logger.info(`Password reset successfully via OTP for: ${identifier}`);
+    logger.info(`Password reset successfully via OTP for: ${targetIdentifier}`);
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {

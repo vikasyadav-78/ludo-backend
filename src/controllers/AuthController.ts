@@ -50,7 +50,7 @@ export const forgotPassword = catchAsync(async (req: Request, res: Response, nex
   const identifier = reqIdentifier || email;
 
   const result = await authService.sendForgotPasswordOtp(identifier);
-  const isEmail = identifier.includes('@');
+  const isEmail = result.target.includes('@');
 
   res.status(200).json({
     status: 'success',
