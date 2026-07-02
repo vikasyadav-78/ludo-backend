@@ -30,24 +30,22 @@ export class AdminService {
     // Active Users Today (unique users with logins since midnight)
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    const activeUsersToday = await prisma.loginHistory.groupBy({
-      by: ['userId'],
+    const activeUsersToday = await prisma.user.count({
       where: {
-        timestamp: { gte: startOfToday },
-        userId: { not: null }
+        lastLoginAt: { gte: startOfToday },
+        role: 'USER'
       }
-    }).then(res => res.length);
+    });
 
     // Active Users This Week (unique users with logins in last 7 days)
     const startOfWeek = new Date();
     startOfWeek.setDate(startOfWeek.getDate() - 7);
-    const activeUsersThisWeek = await prisma.loginHistory.groupBy({
-      by: ['userId'],
+    const activeUsersThisWeek = await prisma.user.count({
       where: {
-        timestamp: { gte: startOfWeek },
-        userId: { not: null }
+        lastLoginAt: { gte: startOfWeek },
+        role: 'USER'
       }
-    }).then(res => res.length);
+    });
 
     // Online users count (active sockets)
     const onlineUsers = getOnlineUsersCount();

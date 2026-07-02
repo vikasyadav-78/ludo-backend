@@ -59,7 +59,7 @@ model OtpVerification {
   attempts    Int      @default(0)
   lastSentAt  DateTime
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
 }
 
 model Wallet {
@@ -295,7 +295,7 @@ model AdminAuditLog {
   ip        String
   device    String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model AdminSetting {

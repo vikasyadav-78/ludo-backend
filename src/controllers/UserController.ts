@@ -5,6 +5,9 @@ import { AuthenticatedRequest } from '../interfaces/auth.interface';
 import AppError from '../utils/AppError';
 import catchAsync from '../utils/catchAsync';
 import referralService from '../services/ReferralService';
+import bcrypt from 'bcryptjs';
+import { systemSettingsCache } from '../modules/system-settings/SystemSettingsCache';
+import otpService from '../services/OtpService';
 
 
 export const getProfile = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -160,6 +163,121 @@ export const getLeaderboard = catchAsync(async (req: AuthenticatedRequest, res: 
     data: {
       topWinners,
       topReferrers
+    }
+  });
+});
+
+export const verifySendOtp = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const user = req.user!;
+  const { type } = req.body; // 'email' or 'mobile'
+  if (type !== 'email' && type !== 'mobile') {
+    throw new AppError('Invalid verification type', 400);
+  }
+
+  // Generate random 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpHash = await bcrypt.hash(otp, 10);
+
+  // Since mobile SMS is disabled, if type is mobile we route the OTP to email!
+  const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
+  const targetIdentifier = (type === 'email' || provider === 'email') ? user.email : user.mobile;
+
+  // Store OTP in database
+  await prisma.otpVerification.upsert({
+    where: { identifier: targetIdentifier },
+    update: {
+      otpHash,
+      expiry: new Date(Date.now() + 5 * 60000), // 5 minutes
+      attempts: 0,
+      lastSentAt: new Date()
+    },
+    create: {
+      identifier: targetIdentifier,
+      otpHash,
+      expiry: new Date(Date.now() + 5 * 60000),
+      attempts: 0,
+      lastSentAt: new Date()
+    }
+  });
+
+  // Send OTP
+  await otpService.sendOtp(targetIdentifier, otp);
+
+  res.status(200).json({
+    status: 'success',
+    message: (type === 'email' || provider === 'email')
+      ? `Verification OTP sent to your registered email address ${user.email}.`
+      : `Verification OTP sent to your mobile number ${user.mobile}.`,
+    target: targetIdentifier
+  });
+});
+
+export const verifyOtp = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const user = req.user!;
+  const { type, otp } = req.body; // type is 'email' or 'mobile'
+  if (type !== 'email' && type !== 'mobile') {
+    throw new AppError('Invalid verification type', 400);
+  }
+  if (!otp) {
+    throw new AppError('OTP code is required', 400);
+  }
+
+  const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
+  const targetIdentifier = (type === 'email' || provider === 'email') ? user.email : user.mobile;
+
+  const record = await prisma.otpVerification.findUnique({
+    where: { identifier: targetIdentifier }
+  });
+  if (!record) {
+    throw new AppError('No OTP request found for this channel', 400);
+  }
+
+  if (new Date() > new Date(record.expiry)) {
+    throw new AppError('OTP has expired', 400);
+  }
+
+  const isMatch = await bcrypt.compare(otp, record.otpHash);
+  if (!isMatch) {
+    const newAttempts = record.attempts + 1;
+    if (newAttempts >= 5) {
+      await prisma.otpVerification.delete({ where: { identifier: targetIdentifier } });
+      throw new AppError('Maximum invalid OTP attempts exceeded. Please request a new OTP.', 400);
+    } else {
+      await prisma.otpVerification.update({
+        where: { identifier: targetIdentifier },
+        data: { attempts: newAttempts }
+      });
+      throw new AppError('Invalid OTP', 400);
+    }
+  }
+
+  // Success! Delete OTP record
+  await prisma.otpVerification.delete({ where: { identifier: targetIdentifier } });
+
+  // Update user verification status in database
+  const updateData = type === 'email' ? { isEmailVerified: true } : { isMobileVerified: true };
+  const updatedUser = await userRepository.update(user.id, updateData);
+
+  if (!updatedUser) {
+    throw new AppError('User not found after update', 404);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `${type === 'email' ? 'Email' : 'Mobile'} verified successfully!`,
+    data: {
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        mobile: updatedUser.mobile,
+        role: updatedUser.role,
+        avatar: updatedUser.avatar,
+        referralCode: updatedUser.referralCode,
+        mobileVerified: updatedUser.isMobileVerified,
+        emailVerified: updatedUser.isEmailVerified,
+        createdAt: updatedUser.createdAt
+      }
     }
   });
 });

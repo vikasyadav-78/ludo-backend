@@ -176,8 +176,12 @@ export class BattleService {
       const winnerAmount = amount * 2 - commissionAmount;
 
       if (inviteCode && inviteCode.trim() !== '') {
+        const trimmedCode = inviteCode.trim();
+        if (!/^\d{8}$/.test(trimmedCode)) {
+          throw new AppError('Invite code must be exactly 8 digits', 400);
+        }
         const existing = await tx.battle.findUnique({
-          where: { inviteCode }
+          where: { inviteCode: trimmedCode }
         });
         if (existing) {
           throw new AppError('Invite code already in use', 400);
@@ -331,6 +335,10 @@ export class BattleService {
   async setInviteCode(userId: string, battleId: string, inviteCode: string): Promise<any> {
     if (!inviteCode || inviteCode.trim() === '') {
       throw new AppError('Invite code cannot be empty', 400);
+    }
+    const trimmedCode = inviteCode.trim();
+    if (!/^\d{8}$/.test(trimmedCode)) {
+      throw new AppError('Invite code must be exactly 8 digits', 400);
     }
 
     const battle = await prisma.battle.findUnique({

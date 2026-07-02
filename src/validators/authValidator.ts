@@ -62,8 +62,16 @@ export const resetPasswordSchema = z.object({
 
 export const resetPasswordMobileSchema = z.object({
   body: z.object({
-    mobile: z.string().regex(mobileRegex, 'Invalid Indian mobile number'),
+    identifier: z.string().min(1, 'Identifier is required').optional(),
+    mobile: z.string().regex(mobileRegex, 'Invalid Indian mobile number').optional(),
     otp: z.string().regex(otpRegex, 'OTP must be a 6-digit number'),
     password: z.string().min(6, 'New password must be at least 6 characters'),
+  }),
+});
+
+export const verifyResetOtpSchema = z.object({
+  body: z.object({
+    identifier: z.string().min(1, 'Identifier is required'),
+    otp: z.string().regex(otpRegex, 'OTP must be a 6-digit number'),
   }),
 });

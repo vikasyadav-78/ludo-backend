@@ -7,6 +7,9 @@ const router = Router();
 
 router.use(protect);
 
+router.post('/verify-send-otp', userController.verifySendOtp);
+router.post('/verify-otp', userController.verifyOtp);
+
 router.get('/profile', userController.getProfile);
 router.put('/profile', userController.updateProfile);
 router.patch('/mobile', userController.changeMobile);

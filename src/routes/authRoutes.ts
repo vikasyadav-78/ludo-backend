@@ -11,6 +11,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   resetPasswordMobileSchema,
+  verifyResetOtpSchema,
 } from '../validators/authValidator';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.post('/register-verify-otp', authLimiter, validate(registerVerifyOtpSchem
 router.post('/login', authLimiter, validate(loginSchema), authController.login);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);
+router.post('/verify-reset-otp', validate(verifyResetOtpSchema), authController.verifyResetOtp);
 router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 router.post('/reset-password-mobile', validate(resetPasswordMobileSchema), authController.resetPasswordMobile);
 

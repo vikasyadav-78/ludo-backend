@@ -94,18 +94,7 @@ You MUST strictly return your response in the following JSON format without mark
       attempt++;
       try {
         if (!this.genAI) {
-          // If no API key, return a mock response for fallback/testing
-          logger.warn('Gemini API is not initialized. Returning mock analysis result.');
-          return {
-            isLudoKing: true,
-            winner: 'MOCK_WINNER',
-            loser: 'MOCK_LOSER',
-            roomCode: 'LK123456',
-            editedImage: false,
-            blurredImage: false,
-            confidence: 99,
-            reason: 'Mock verification: Gemini API Key is missing. Settle this match manually or configure GEMINI_API_KEY in .env.'
-          };
+          throw new Error('Gemini API key is not configured. AI verification cannot be performed at this time.');
         }
 
         const imagePartA = await this.downloadImageAsGenerativePart(playerAScreenshotUrl);

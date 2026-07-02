@@ -85,7 +85,31 @@ export class ResultService {
         return { message: 'Result submitted. Waiting for opponent submission.', triggerAI: false };
       }
 
-      // Both have submitted! Transition battle to RESULT_SUBMITTED so AI runs
+      // Both have submitted! Let's check for mutual agreement
+      const creatorPart = battle.createdBy === userId ? updatedParticipant : opponent;
+      const joinerPart = battle.joinedBy === userId ? updatedParticipant : opponent;
+
+      const creatorReport = creatorPart.submittedResult;
+      const joinerReport = joinerPart.submittedResult;
+
+      // 1. Mutual cancellation agreement
+      if (creatorReport === 'CANCEL' && joinerReport === 'CANCEL') {
+        await this.resolveCancellation(battle, tx);
+        return { message: 'Battle cancelled by mutual agreement. Wagers refunded.', triggerAI: false };
+      }
+
+      // 2. Mutual winner/loser agreement
+      if (creatorReport === 'WIN' && joinerReport === 'LOSS') {
+        await this.resolveWinner(battle, battle.createdBy, battle.joinedBy!, tx);
+        return { message: 'Battle settled successfully by mutual agreement.', triggerAI: false };
+      }
+
+      if (creatorReport === 'LOSS' && joinerReport === 'WIN') {
+        await this.resolveWinner(battle, battle.joinedBy!, battle.createdBy, tx);
+        return { message: 'Battle settled successfully by mutual agreement.', triggerAI: false };
+      }
+
+      // 3. Conflicting results (e.g. WIN/WIN, LOSS/LOSS, WIN/CANCEL, etc.) -> AI verification triggers
       const updatedBattle = await tx.battle.update({
         where: { id: battleId },
         data: { status: 'RESULT_SUBMITTED' },
@@ -99,7 +123,7 @@ export class ResultService {
       emitBattleUpdate(battle.id, 'result_submitted', { battle: updatedBattle, userId });
 
       return {
-        message: 'Both players submitted results. AI verification in progress.',
+        message: 'Conflicting results. AI verification in progress.',
         triggerAI: true
       };
     });

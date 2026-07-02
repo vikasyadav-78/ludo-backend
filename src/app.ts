@@ -43,6 +43,12 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Fallback for undefined routes
 app.all('*', (req: Request, res: Response, next: NextFunction) => {
+  if (req.originalUrl.startsWith('/uploads/')) {
+    return res.status(404).json({
+      status: 'fail',
+      message: `File not found: ${req.originalUrl}`
+    });
+  }
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 

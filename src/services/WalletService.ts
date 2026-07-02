@@ -16,10 +16,24 @@ export class WalletService {
     if (!wallet) {
       throw new AppError('Wallet not found', 404);
     }
+
+    const result = await prisma.$queryRaw<Array<{ sum: string | number | null }>>`
+      SELECT SUM(newBalance - previousBalance) as sum
+      FROM WalletLedger
+      WHERE userId = ${userId}
+        AND newBalance > previousBalance
+        AND (
+          balanceType = 'BONUS'
+          OR (balanceType = 'WINNING' AND description LIKE '%commission%')
+        )
+    `;
+    const lifetimeBonus = Number(result[0]?.sum || 0);
+
     return {
       depositBalance: wallet.depositBalance,
       winningBalance: wallet.winningBalance,
       bonusBalance: wallet.bonusBalance,
+      lifetimeBonus: lifetimeBonus,
       totalBalance: wallet.depositBalance + wallet.winningBalance + wallet.bonusBalance,
     };
   }

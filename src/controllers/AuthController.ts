@@ -69,6 +69,14 @@ export const resetPassword = catchAsync(async (req: Request, res: Response, next
   });
 });
 
+export const verifyResetOtp = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+  await authService.verifyResetOtp(req.body);
+  res.status(200).json({
+    status: 'success',
+    message: 'OTP verified successfully.',
+  });
+});
+
 export const resetPasswordMobile = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
   await authService.resetPasswordMobile(req.body);
   res.status(200).json({

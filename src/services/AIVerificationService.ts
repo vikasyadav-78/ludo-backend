@@ -3,7 +3,7 @@ import geminiService from './GeminiService';
 import walletRepository from '../repositories/WalletRepository';
 import referralService from './ReferralService';
 import notificationService from '../notifications/NotificationService';
-import { emitBattleUpdate } from '../socket/socket';
+import { emitBattleUpdate, emitAdminEvent } from '../socket/socket';
 import { logger } from '../config/logger';
 import { BattleStatus } from '@prisma/client';
 import { systemSettingsCache } from '../modules/system-settings/SystemSettingsCache';
@@ -97,6 +97,11 @@ export class AIVerificationService {
         }
       });
       emitBattleUpdate(battleId, 'battle_pending_approval', { id: battleId, status: 'PENDING_APPROVAL' });
+      await this.notifyAdminsOfPendingReview(
+        battleId,
+        'Battle requires manual review',
+        `AI verification failed for battle ${battleId}. Administrator action is required.`
+      );
       return;
     }
 
@@ -133,33 +138,33 @@ export class AIVerificationService {
       }
     }
 
-    // Auto-settlement criteria checks
     const hasHighConfidence = confidence >= 95;
     const isGameLudoKing = isLudoKing;
     const isNotEdited = !editedImage;
     const isNotBlurred = !blurredImage;
-    const hasDetectedWinner = detectedWinnerId !== null;
 
-    // Both players screenshots must agree on the declared status
-    // Creator reported result
-    const creatorReport = creatorPart.submittedResult; // WIN, LOSS, CANCEL
-    // Joiner reported result
-    const joinerReport = joinerPart.submittedResult; // WIN, LOSS, CANCEL
+    const creatorReport = creatorPart.submittedResult;
+    const joinerReport = joinerPart.submittedResult;
 
-    // Check mutual agreement: Creator claims Win, Joiner claims Loss, OR vice versa
-    const playersAgree = 
+    const playersAgree =
       (creatorReport === 'WIN' && joinerReport === 'LOSS') ||
       (creatorReport === 'LOSS' && joinerReport === 'WIN');
 
     const expectedWinnerId = creatorReport === 'WIN' ? battle.createdBy : battle.joinedBy;
+    const expectedLoserId = expectedWinnerId === battle.createdBy ? battle.joinedBy : battle.createdBy;
 
-    // AI winner must match the agreed winner from the reports
-    const aiWinnerMatchesAgreedWinner = detectedWinnerId === expectedWinnerId;
+    let resolutionWinnerId: string | null = detectedWinnerId;
+    let resolutionLoserId: string | null = detectedLoserId;
 
-    // Room code check if roomCode is detected and invite code exists
+    if (!resolutionWinnerId && playersAgree && expectedWinnerId) {
+      resolutionWinnerId = expectedWinnerId;
+      resolutionLoserId = expectedLoserId;
+    }
+
+    const aiWinnerMatchesAgreedWinner = detectedWinnerId !== null && detectedWinnerId === expectedWinnerId;
+
     let roomCodeMatches = true;
     if (roomCode && battle.inviteCode) {
-      // Clean codes of spaces, non-alphanumeric, and LK prefix to compare
       const cleanRoom = roomCode.replace(/[^0-9]/g, '');
       const cleanInvite = battle.inviteCode.replace(/[^0-9]/g, '');
       if (cleanRoom && cleanInvite && !cleanRoom.includes(cleanInvite) && !cleanInvite.includes(cleanRoom)) {
@@ -167,26 +172,26 @@ export class AIVerificationService {
       }
     }
 
-    const canAutoSettle = 
+    const canAutoSettle =
       isGameLudoKing &&
       hasHighConfidence &&
-      hasDetectedWinner &&
       playersAgree &&
-      aiWinnerMatchesAgreedWinner &&
       isNotEdited &&
       isNotBlurred &&
-      roomCodeMatches;
+      roomCodeMatches &&
+      resolutionWinnerId !== null &&
+      resolutionLoserId !== null;
 
-    if (canAutoSettle && detectedWinnerId && detectedLoserId) {
-      // 5. Execute transactional auto-settlement
-      logger.info(`AI Auto-settling Battle ${battleId} -> Winner: ${detectedWinnerId}`);
-      await this.settleBattle(battle, detectedWinnerId, detectedLoserId, confidence, aiResponse);
+    if (canAutoSettle && resolutionWinnerId && resolutionLoserId) {
+      const settlementMethod = detectedWinnerId ? 'AI' : 'PLAYER_REPORT';
+      logger.info(`Auto-settling Battle ${battleId} -> Winner: ${resolutionWinnerId} (method: ${settlementMethod})`);
+      await this.settleBattle(battle, resolutionWinnerId, resolutionLoserId, confidence, aiResponse, settlementMethod);
     } else {
       // 6. Handle Disputes & Manual Reviews
       let disputeReason = '';
       if (!isGameLudoKing) disputeReason += 'Screenshot does not appear to be Ludo King. ';
       if (!hasHighConfidence) disputeReason += `Low AI confidence (${confidence}% < 95%). `;
-      if (!hasDetectedWinner) disputeReason += `Could not match detected winner "${winner}" to room participants. `;
+      if (!detectedWinnerId) disputeReason += `Could not match detected winner "${winner}" to room participants. `;
       if (!playersAgree) disputeReason += 'Players submitted conflicting results. ';
       if (!aiWinnerMatchesAgreedWinner) disputeReason += 'AI winner mismatch with player reports. ';
       if (editedImage) disputeReason += 'AI detected potential image manipulation. ';
@@ -206,7 +211,8 @@ export class AIVerificationService {
     winnerId: string,
     loserId: string,
     confidence: number,
-    aiResponse: any
+    aiResponse: any,
+    settlementMethod: 'AI' | 'PLAYER_REPORT' = 'AI'
   ): Promise<void> {
     await prisma.$transaction(async (tx) => {
       // 1. Update battle status to SETTLED
@@ -220,7 +226,9 @@ export class AIVerificationService {
           verificationStatus: 'AUTO_SETTLED',
           verificationTimestamp: new Date(),
           settlementTimestamp: new Date(),
-          adminNotes: 'Auto-settled successfully by Gemini AI.'
+          adminNotes: settlementMethod === 'AI'
+            ? 'Auto-settled successfully by Gemini AI.'
+            : 'Auto-settled based on consistent participant reports and AI validation.'
         }
       });
 
@@ -341,7 +349,27 @@ export class AIVerificationService {
       );
     }
 
+    await this.notifyAdminsOfPendingReview(
+      battleId,
+      'Disputed battle requires admin action',
+      `Battle "${updated.title}" requires manual review due to AI dispute: ${disputeReason}`
+    );
     emitBattleUpdate(battleId, 'battle_disputed', updated);
+  }
+
+  private async notifyAdminsOfPendingReview(battleId: string, title: string, message: string): Promise<void> {
+    const admins = await prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true }
+    });
+
+    await Promise.all(
+      admins.map(admin =>
+        notificationService.sendNotification(admin.id, title, message, 'SYSTEM', battleId)
+      )
+    );
+
+    emitAdminEvent('admin_pending_review', { battleId, title, message });
   }
 }
 

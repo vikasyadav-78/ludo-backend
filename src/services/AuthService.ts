@@ -227,8 +227,8 @@ export class AuthService {
           role: 'USER',
           status: 'ACTIVE',
           referralCode: generatedReferralCode,
-          isMobileVerified: true,
-          isEmailVerified: false,
+          isMobileVerified: (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase() !== 'email',
+          isEmailVerified: (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase() === 'email',
         },
       });
 
@@ -342,7 +342,7 @@ export class AuthService {
           failureReason: 'User not found',
         },
       });
-      throw new AppError('Invalid email or password', 401);
+      throw new AppError('Invalid email', 401);
     }
 
     if (user.status === 'SUSPENDED') {
@@ -390,7 +390,7 @@ export class AuthService {
           failureReason: 'Incorrect password',
         },
       });
-      throw new AppError('Invalid email or password', 401);
+      throw new AppError('Incorrect password', 401);
     }
 
     // Record success login
@@ -597,6 +597,51 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 12);
     await userRepository.update(user.id, { password: hashedPassword });
     logger.info(`Password reset successfully via OTP for: ${targetIdentifier}`);
+  }
+
+  async verifyResetOtp(data: any): Promise<void> {
+    const { identifier: reqIdentifier, mobile, email, otp } = data;
+    const identifier = reqIdentifier || mobile || email;
+
+    if (!identifier) {
+      throw new AppError('Identifier (email or mobile) is required', 400);
+    }
+
+    const isEmailInput = identifier.includes('@');
+    const user = isEmailInput ? await userRepository.findByEmail(identifier) : await userRepository.findByMobile(identifier);
+    if (!user) {
+      throw new AppError('No user found with that email or mobile number', 404);
+    }
+
+    const provider = (systemSettingsCache.get('OTP_PROVIDER') || process.env.OTP_PROVIDER || 'email').toLowerCase();
+    const targetIdentifier = provider === 'email' ? user.email : (isEmailInput ? user.email : user.mobile);
+
+    const record = await prisma.otpVerification.findUnique({
+      where: { identifier: targetIdentifier }
+    });
+
+    if (!record) {
+      throw new AppError(provider === 'email' ? 'No OTP request found for this email address' : 'No OTP request found for this email or mobile number', 400);
+    }
+
+    if (new Date() > new Date(record.expiry)) {
+      throw new AppError('OTP has expired. Please request a new one.', 400);
+    }
+
+    const isMatch = await bcrypt.compare(otp, record.otpHash);
+    if (!isMatch) {
+      const newAttempts = record.attempts + 1;
+      if (newAttempts >= systemSettingsCache.getNumber('OTP_RETRY_LIMIT', 5)) {
+        await prisma.otpVerification.delete({ where: { identifier: targetIdentifier } });
+        throw new AppError('Maximum invalid OTP attempts exceeded. Please request a new OTP.', 400);
+      } else {
+        await prisma.otpVerification.update({
+          where: { identifier: targetIdentifier },
+          data: { attempts: newAttempts }
+        });
+        throw new AppError('Invalid OTP', 400);
+      }
+    }
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
